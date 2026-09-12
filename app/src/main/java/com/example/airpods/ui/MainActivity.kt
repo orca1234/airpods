@@ -10,12 +10,12 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -30,6 +30,7 @@ import com.example.airpods.service.AirPodsMonitorService
 import com.example.airpods.ui.popup.AirPodsPopupActivity
 import com.example.airpods.ui.popup.AirPodsPopupContent
 import com.example.airpods.ui.theme.AirPodsTheme
+import com.example.airpods.ui.theme.BatteryGreen
 
 class MainActivity : ComponentActivity() {
 
@@ -39,7 +40,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             AirPodsTheme {
                 MainScreen(
-                    onStartService = { startMonitorService() },
+                    onRestartService = { restartMonitorService() },
                     onTestPopup = {
                         startActivity(Intent(this, AirPodsPopupActivity::class.java))
                     }
@@ -48,8 +49,9 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun startMonitorService() {
+    private fun restartMonitorService() {
         val intent = Intent(this, AirPodsMonitorService::class.java)
+        stopService(intent)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             startForegroundService(intent)
         } else {
@@ -61,19 +63,20 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
-    onStartService: () -> Unit,
+    onRestartService: () -> Unit,
     onTestPopup: () -> Unit
 ) {
     val context = LocalContext.current
+    val status by AirPodsMonitorService.statusFlow.collectAsState()
     var permissionsGranted by remember { mutableStateOf(false) }
 
-    // 블루투스 권한 런처
+    // 블루투스 및 위치 권한 요청 런처
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         permissionsGranted = permissions.values.all { it }
         if (permissionsGranted) {
-            onStartService()
+            onRestartService()
         }
     }
 
@@ -82,9 +85,11 @@ fun MainScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             permissions.add(Manifest.permission.BLUETOOTH_SCAN)
             permissions.add(Manifest.permission.BLUETOOTH_CONNECT)
-        } else {
-            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+        // 안드로이드 BLE 비콘 감지에 필수적인 위치 권한 요청
+        permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+        permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -95,6 +100,11 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = { Text("에어팟 매니저", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = onRestartService) {
+                        Icon(Icons.Default.Refresh, contentDescription = "스캔 새로고침")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface
                 )
@@ -120,29 +130,46 @@ fun MainScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Bluetooth, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            Icons.Default.Bluetooth,
+                            contentDescription = null,
+                            tint = if (status.isConnected) BatteryGreen else MaterialTheme.colorScheme.primary
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "BLE 모니터링 활성화됨",
+                            text = if (status.isConnected) "${status.model.displayName} 신호 수신 중!" else "기본형 에어팟 탐색 중...",
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp
                         )
                     }
                     Text(
-                        text = "에어팟 케이스를 열거나 이어폰을 귀에 꽂으면 신호를 자동으로 수신합니다.",
+                        text = if (status.isConnected)
+                            "신호 세기: ${status.rssi} dBm (실시간 수신 완료)"
+                        else
+                            "태블릿의 '위치(GPS)'를 켜고, 에어팟 케이스 뚜껑을 연 상태로 태블릿 가까이에 두세요.",
                         fontSize = 13.sp,
-                        color = Color.Gray
+                        color = if (status.isConnected) BatteryGreen else Color.Gray
                     )
                 }
             }
 
-            // 실시간 상태 표시 미리보기
+            // 실시간 상태 표시 (Compose StateFlow 실시간 연동)
             AirPodsPopupContent(
-                status = AirPodsMonitorService.latestStatus,
+                status = status,
                 onClose = {}
             )
 
             Spacer(modifier = Modifier.weight(1f))
+
+            // 스캔 새로고침 버튼
+            OutlinedButton(
+                onClick = onRestartService,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("블루투스 감지 새로고침 / 다시 시작")
+            }
 
             // 팝업 테스트 버튼
             OutlinedButton(

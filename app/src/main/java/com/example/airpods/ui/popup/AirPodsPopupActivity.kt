@@ -3,9 +3,6 @@ package com.example.airpods.ui.popup
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -39,7 +36,7 @@ class AirPodsPopupActivity : ComponentActivity() {
 
         setContent {
             AirPodsTheme {
-                val status = AirPodsMonitorService.latestStatus
+                val status by AirPodsMonitorService.statusFlow.collectAsState()
 
                 Box(
                     modifier = Modifier
@@ -107,19 +104,19 @@ fun AirPodsPopupContent(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 BatteryItem(
-                    title = "왼쪽",
+                    title = "왼쪽 유닛",
                     icon = Icons.Default.Headphones,
                     battery = status.leftBattery,
                     isCharging = status.isLeftCharging
                 )
                 BatteryItem(
-                    title = "케이스",
+                    title = "충전 케이스",
                     icon = Icons.Default.Inventory2,
                     battery = status.caseBattery,
                     isCharging = status.isCaseCharging
                 )
                 BatteryItem(
-                    title = "오른쪽",
+                    title = "오른쪽 유닛",
                     icon = Icons.Default.Headphones,
                     battery = status.rightBattery,
                     isCharging = status.isRightCharging
@@ -129,12 +126,21 @@ fun AirPodsPopupContent(
             Spacer(modifier = Modifier.height(20.dp))
 
             // 하단 연결 상태 메시지
-            Text(
-                text = "연결됨",
-                color = BatteryGreen,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            if (status.isConnected) {
+                Text(
+                    text = "● 실시간 연결됨 (신호강도: ${status.rssi} dBm)",
+                    color = BatteryGreen,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+            } else {
+                Text(
+                    text = "○ 에어팟 뚜껑을 열어 신호를 보내주세요",
+                    color = Color.Gray,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Normal
+                )
+            }
         }
     }
 }

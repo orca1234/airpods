@@ -19,6 +19,9 @@ import com.example.airpods.ui.popup.AirPodsPopupActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -27,8 +30,13 @@ class AirPodsMonitorService : Service() {
     companion object {
         const val CHANNEL_ID = "airpods_monitor_channel"
         const val NOTIFICATION_ID = 1001
-        var latestStatus: AirPodsStatus = AirPodsStatus()
-            private set
+
+        private val _statusFlow = MutableStateFlow(AirPodsStatus())
+        val statusFlow: StateFlow<AirPodsStatus> = _statusFlow.asStateFlow()
+
+        var latestStatus: AirPodsStatus
+            get() = _statusFlow.value
+            set(value) { _statusFlow.value = value }
     }
 
     private var scanner: AirPodsBleScanner? = null
@@ -44,11 +52,11 @@ class AirPodsMonitorService : Service() {
         scanner = AirPodsBleScanner(bluetoothManager.adapter)
         scanner?.startScan()
 
-        // 상태 수신 및 알림/팝업 업데이트
+        // 상태 수신 및 알림/팝업/UI 업데이트
         serviceScope.launch {
             scanner?.statusFlow?.collectLatest { status ->
                 if (status.isConnected) {
-                    latestStatus = status
+                    _statusFlow.value = status
                     updateNotification(status)
                     checkAndShowPopup(status)
                 }
@@ -70,7 +78,7 @@ class AirPodsMonitorService : Service() {
 
     @SuppressLint("NotificationPermission")
     private fun updateNotification(status: AirPodsStatus) {
-        val title = "${status.model.displayName} 배터리 상태"
+        val title = "${status.model.displayName} 배터리"
         val left = status.leftBattery?.let { "$it%" } ?: "-"
         val right = status.rightBattery?.let { "$it%" } ?: "-"
         val case = status.caseBattery?.let { "$it%" } ?: "-"

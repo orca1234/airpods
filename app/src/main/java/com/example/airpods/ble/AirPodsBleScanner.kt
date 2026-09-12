@@ -3,7 +3,6 @@ package com.example.airpods.ble
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.le.ScanCallback
-import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.util.Log
@@ -18,7 +17,7 @@ class AirPodsBleScanner(
     companion object {
         private const val TAG = "AirPodsBleScanner"
         private const val APPLE_MANUFACTURER_ID = 0x004C // 76
-        private const val MIN_RSSI_THRESHOLD = -80       // 신호가 너무 약한 타인의 에어팟 배제
+        private const val MIN_RSSI_THRESHOLD = -95       // 기본형 에어팟 수신율을 위해 감도 대폭 완화
     }
 
     private val _statusFlow = MutableStateFlow(AirPodsStatus())
@@ -30,7 +29,7 @@ class AirPodsBleScanner(
         override fun onScanResult(callbackType: Int, result: ScanResult?) {
             result ?: return
 
-            // RSSI 신호 세기 필터링
+            // 신호 세기 검사
             if (result.rssi < MIN_RSSI_THRESHOLD) return
 
             val scanRecord = result.scanRecord ?: return
@@ -38,7 +37,7 @@ class AirPodsBleScanner(
 
             val parsedStatus = AirPodsPacketParser.parse(manufacturerData, result.rssi)
             if (parsedStatus != null && parsedStatus.isConnected) {
-                Log.d(TAG, "AirPods 감지: Left=${parsedStatus.leftBattery}%, Right=${parsedStatus.rightBattery}%, Case=${parsedStatus.caseBattery}%")
+                Log.i(TAG, "에어팟 실시간 감지 성공! L=${parsedStatus.leftBattery}%, R=${parsedStatus.rightBattery}%, Case=${parsedStatus.caseBattery}% (RSSI: ${result.rssi}dBm)")
                 _statusFlow.value = parsedStatus
             }
         }
@@ -55,20 +54,16 @@ class AirPodsBleScanner(
 
         val scanner = bluetoothAdapter.bluetoothLeScanner ?: return
 
-        // Apple 기기 패킷만 스캔하도록 필터 설정
-        val filter = ScanFilter.Builder()
-            .setManufacturerData(APPLE_MANUFACTURER_ID, byteArrayOf())
-            .build()
-
         val settings = ScanSettings.Builder()
-            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // 빠른 감지를 위해 저지연 모드 사용
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY) // 저지연 최고 속도 스캔
             .setReportDelay(0)
             .build()
 
         try {
-            scanner.startScan(listOf(filter), settings, scanCallback)
+            // 삼성 갤탭 기기 호환성을 위해 필터 없이 소프트웨어 필터링(null 필터) 적용
+            scanner.startScan(null, settings, scanCallback)
             isScanning = true
-            Log.i(TAG, "에어팟 BLE 스캐너 시작됨")
+            Log.i(TAG, "에어팟 BLE 스캐너 가동 시작 (전체 수신 모드)")
         } catch (e: Exception) {
             Log.e(TAG, "스캔 시작 예외 발생", e)
         }
